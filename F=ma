@@ -1,0 +1,108 @@
+#!/usr/bin/eval perl
+# Do a descrete simulation using F=ma
+# over a time series
+
+use warnings;
+use strict;
+
+my $bodydia = 0.030 ;  # diameter of rocket body in meters
+my $mr  = 0.200  ; # mass of rocket  in kg
+
+my $T   = 28.5; # Thrust of motor in Newtons
+my $t   = 1.7; # thrust burn time
+my $mp  = 0.013 * $t;  # propelant in kg per second
+
+my $delay = 23; # number of seconds from start of flight to chute arm.
+my $chute_alt = 25; # meters above ground to fire chute.
+my $landingv  = 3; # velocity of rocket at landing meter/sec
+
+my $g   = 9.81; # gravitational constant meter/sec**2
+my $rho = 1.22; # density of air at sea level kg/meter**3 (-10% per 1000 feet)
+my $Cd  = 0.75; # coeficient of drag for most rockets (no units)
+my $chuteCd = 1.5; # Cd for a hemisphere chute, Tethered sheets are near 0.75.
+my $pi  = 2*atan2(1,0); #
+
+my $chutedia = sqrt( (8 * $mr * $g) / ($pi * $rho * $Cd * $landingv ** 2) );
+
+# print "\$chutedia = $chutedia\n";
+
+my $bodyA  =  $pi*($bodydia/2)**2 ; # frontal area in meters**2 ignore fin area.
+my $chuteA =  $pi*($chutedia/2)**2 ; #  chute area in meters**2
+
+my $now = 0.0000;
+my $delta = 0.01;
+my $alt =  0;
+my $vel = 0;
+my $chute = 0;
+
+sub Fthrust {
+    my $vel = shift;
+    my $now = shift;
+
+    return $T if ($now < $t);
+    return 0;
+} 
+
+sub Fbodydrag {
+    my $vel = shift;
+    my $now = shift;
+
+    my $sign = ($vel > 0)? -1:1;
+
+    return $sign * 1/2 * $rho * $Cd * $bodyA * $vel**2;
+} 
+
+sub Fchutedrag {
+    my $vel = shift;
+    my $now = shift;
+    my $opentime = 3; # how fast does the chute open in seconds
+
+    my $sign = ($vel > 0)? -1:1;
+
+    if ($now > $delay && $alt < $chute_alt) {
+	$chute = $chute || $now;
+	if ($now < $chute+$opentime) {
+	    return $sign * 1/2 * $rho * $chuteCd * $chuteA
+		    * ($now-$chute)/$opentime * $vel**2;
+	}
+	else {
+	    return $sign * 1/2 * $rho * $chuteCd * $chuteA * $vel**2;
+	}
+    }
+    else {
+	return 0;
+    } 
+} 
+
+sub Fgravity {
+    my $vel = shift;
+    my $now = shift;
+
+    return Mass($vel, $now) * $g;
+}  
+
+sub Mass  {
+    my $vel = shift;
+    my $now = shift;
+    return ($mr + ($mp/$t)*($t-$now)) if($now < $t);
+    return  $mr;
+} 
+
+while ( $alt >= 0 ) {
+    
+    my ($Ft, $Fbd, $Fg, $Fcd, $M) = (
+	Fthrust($vel, $now), Fbodydrag($vel, $now),
+	Fgravity($vel, $now), Fchutedrag($vel, $now),
+	Mass($vel, $now)
+    );
+
+    my $acc = ($Ft - $Fg + $Fbd + $Fcd) / $M;
+
+    $vel += $acc * $delta;
+    $alt += $vel * $delta;
+
+    printf "%9.4f %9.4f %9.4f %9.4f %9.4f %9.4f %9.4f %9.4f %9.4f\n",
+	$now, $acc, $vel, $alt, $Ft, $Fbd, $Fg, $Fcd, $M;
+
+    $now += $delta;
+}
